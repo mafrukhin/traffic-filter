@@ -3,7 +3,7 @@ services:
   gateway:
     image: openresty/openresty:alpine
     ports:
-      - "8080:80"
+      - "80:80"
     volumes:
       - ./gateway/nginx.conf:/usr/local/openresty/nginx/conf/nginx.conf
       - ./gateway/filter.lua:/etc/nginx/filter.lua
