@@ -130,8 +130,11 @@ func fpHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// anti GSB random param
-	redirect = redirect + "&r=" + fmt.Sprint(time.Now().UnixNano())
-
+	if strings.Contains(redirect, "?") {
+		redirect = redirect + "&r=" + fmt.Sprint(time.Now().UnixNano())
+	} else {
+		redirect = redirect + "?r=" + fmt.Sprint(time.Now().UnixNano())
+	}
 	json.NewEncoder(w).Encode(map[string]string{
 		"redirect": redirect,
 	})
