@@ -1,5 +1,3 @@
-version: "3"
-
 services:
 
   gateway:
@@ -9,16 +7,13 @@ services:
     volumes:
       - ./gateway/nginx.conf:/usr/local/openresty/nginx/conf/nginx.conf
       - ./gateway/filter.lua:/etc/nginx/filter.lua
+      - ./js:/etc/nginx/js   # 🔥 TAMBAH INI
     env_file:
       - .env
     depends_on:
       - botengine
-      - redis
 
   botengine:
     build: ./botengine
     env_file:
       - .env
-
-  redis:
-    image: redis:7-alpine

