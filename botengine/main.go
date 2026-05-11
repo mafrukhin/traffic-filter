@@ -322,6 +322,21 @@ func fpHandler(w http.ResponseWriter, r *http.Request) {
 		challengeLimit = 85
 	}
 
+	if body.Verified {
+		if updatedScore <= challengeLimit {
+			response["action"] = "allow"
+			response["redirect"] = buildRedirect(body.DL, "allow")
+			markVerified(ip)
+			logDecision(ip, "CHALLENGE_PASS", updatedScore, ua)
+		} else {
+			response["action"] = "block"
+			response["redirect"] = buildRedirect(body.BL, "block")
+			logDecision(ip, "CHALLENGE_FAIL", updatedScore, ua)
+		}
+		json.NewEncoder(w).Encode(response)
+		return
+	}
+
 	if isVerified(ip) {
 		response["action"] = "allow"
 		response["redirect"] = buildRedirect(body.DL, "allow")

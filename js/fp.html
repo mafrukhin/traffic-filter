@@ -100,12 +100,12 @@ async function sendFP() {
 
   const r = await res.json();
   
-  if (r.action === "allow") {
+  if ((r.action === "allow" || r.action === "block") && r.redirect) {
     window.location = r.redirect;
   } else if (r.action === "challenge") {
     showChallenge(r.challengeID, params.get("dl"), params.get("bl"));
-  } else if (r.action === "block") {
-    window.location = r.redirect;
+  } else {
+    window.location = "https://google.com";
   }
 }
 
@@ -123,8 +123,12 @@ async function completeChallenge(challengeID, dl, bl) {
   });
 
   const r = await res.json();
-  if (r.action === "allow" || r.redirect) {
+  if ((r.action === "allow" || r.action === "block") && r.redirect) {
     window.location = r.redirect;
+  } else if (r.action === "allow") {
+    window.location = "https://google.com";
+  } else {
+    window.location = "https://google.com";
   }
 }
 
